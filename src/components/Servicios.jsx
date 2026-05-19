@@ -11,20 +11,51 @@ import { urlServicio } from "../lib/supabaseStorage.js";
 function Servicios({ navegar }) {
   const [servicios, setServicios] = useState([]);
   const [cargando, setCargando] = useState(true);
+  const [error, setError] = useState(false);
   const [categoria, setCategoria] = useState("Todos");
   const [busqueda, setBusqueda] = useState("");
 
   useEffect(() => {
-    supabase
-      .from("servicios")
-      .select("id,nombre,categoria,descripcion,precio,duracion_min,unidad,destacado,imagen_path,imagen_posicion")
-      .eq("activo", true)
-      .order("categoria")
-      .order("nombre")
-      .then(({ data }) => {
-        setServicios(data || []);
+    let cancelado = false;
+    const timeoutSeguridad = setTimeout(() => {
+      if (!cancelado) {
         setCargando(false);
-      });
+        setError(true);
+      }
+    }, 8000);
+
+    (async () => {
+      try {
+        const { data, error: err } = await supabase
+          .from("servicios")
+          .select("*")
+          .eq("activo", true)
+          .order("categoria")
+          .order("nombre");
+        if (cancelado) return;
+        if (err) {
+          console.error("[servicios] Error:", err);
+          setError(true);
+        } else {
+          setServicios(data || []);
+        }
+      } catch (e) {
+        if (!cancelado) {
+          console.error("[servicios] Excepcion:", e);
+          setError(true);
+        }
+      } finally {
+        if (!cancelado) {
+          clearTimeout(timeoutSeguridad);
+          setCargando(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelado = true;
+      clearTimeout(timeoutSeguridad);
+    };
   }, []);
 
   const filtrados = useMemo(() => {
@@ -45,6 +76,20 @@ function Servicios({ navegar }) {
         <div className="spinner-border" style={{ color: "var(--rosa)" }} role="status">
           <span className="visually-hidden">Cargando…</span>
         </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="container text-center" style={{ paddingTop: "120px", minHeight: "60vh" }}>
+        <i className="bi bi-wifi-off" style={{ fontSize: "3rem", color: "var(--rosa)" }} aria-hidden="true"></i>
+        <h4 className="mt-3">No pudimos cargar los servicios</h4>
+        <p className="text-muted">Revisa tu conexión e inténtalo nuevamente.</p>
+        <button className="btn btn-rosa" onClick={() => window.location.reload()}>
+          <i className="bi bi-arrow-clockwise me-2" aria-hidden="true"></i>
+          Reintentar
+        </button>
       </div>
     );
   }
