@@ -283,6 +283,8 @@ function MiPerfil({ perfil, userId, onActualizar }) {
             <dl className="perfil-dl">
               <dt>Nombre</dt>
               <dd>{perfil?.nombre} {perfil?.apellido}</dd>
+              <dt>RUT</dt>
+              <dd>{perfil?.rut || <span className="text-muted">No registrado</span>}</dd>
               <dt>Teléfono</dt>
               <dd>{perfil?.telefono || <span className="text-muted">No registrado</span>}</dd>
             </dl>
@@ -312,14 +314,21 @@ function MiPerfil({ perfil, userId, onActualizar }) {
               </div>
               <div className="mb-3">
                 <label className="form-label" htmlFor="p-tel">Teléfono</label>
-                <input
-                  id="p-tel"
-                  type="tel"
-                  className="form-control"
-                  value={campos.telefono}
-                  onChange={(e) => cambiar("telefono", e.target.value)}
-                  placeholder="+56 9 1234 5678"
-                />
+                <div className="input-group">
+                  <span className="input-group-text" style={{ background: "var(--rosa-suave)", borderColor: "var(--rosa-claro)", color: "var(--rosa)", fontWeight: 600 }}>
+                    +569
+                  </span>
+                  <input
+                    id="p-tel"
+                    type="tel"
+                    inputMode="numeric"
+                    className="form-control"
+                    value={campos.telefono.replace(/^\+569/, "")}
+                    onChange={(e) => cambiar("telefono", "+569" + e.target.value.replace(/\D/g, "").slice(0, 8))}
+                    placeholder="12345678"
+                    maxLength={8}
+                  />
+                </div>
               </div>
 
               {error && (
