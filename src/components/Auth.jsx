@@ -123,11 +123,18 @@ function FormLogin({ navegar, onSuccess }) {
           id="login-email"
           type="email"
           autoComplete="email"
+          list="dominios-login"
           className="form-control"
           value={campos.email}
           onChange={(e) => cambiar("email", e.target.value)}
           placeholder="tu@correo.com"
         />
+        <datalist id="dominios-login">
+          {["gmail.com","hotmail.com","outlook.com","yahoo.com","icloud.com","live.cl","live.com"].map((d) => {
+            const base = campos.email.includes("@") ? campos.email.split("@")[0] : campos.email;
+            return base ? <option key={d} value={`${base}@${d}`} /> : null;
+          })}
+        </datalist>
       </div>
 
       <div className="mb-3">
@@ -324,11 +331,18 @@ function FormRegister({ onSuccess }) {
           id="reg-email"
           type="email"
           autoComplete="email"
+          list="dominios-email"
           className="form-control"
           value={campos.email}
           onChange={(e) => cambiar("email", e.target.value)}
           placeholder="tu@correo.com"
         />
+        <datalist id="dominios-email">
+          {["gmail.com","hotmail.com","outlook.com","yahoo.com","icloud.com","live.cl","live.com"].map((d) => {
+            const base = campos.email.includes("@") ? campos.email.split("@")[0] : campos.email;
+            return base ? <option key={d} value={`${base}@${d}`} /> : null;
+          })}
+        </datalist>
       </div>
 
       {/* Teléfono con prefijo fijo */}
