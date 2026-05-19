@@ -1,0 +1,6 @@
+Carpeta de imágenes estáticas.
+
+Las imágenes de servicios se cargan desde URLs externas (Unsplash)
+definidas en src/data/data.js. Para usar imágenes locales:
+1. Coloca las imágenes aquí (ej: corte-dama.jpg)
+2. En src/data/data.js usa la ruta: imagen: "/images/corte-dama.jpg"

@@ -1,0 +1,13 @@
+# Configuración de pnpm (pnpm 11+)
+#
+# Por seguridad, pnpm bloquea los scripts post-instalación de las
+# dependencias para prevenir ataques de cadena de suministro.
+#
+# 'allowBuilds' (introducido en pnpm 11, reemplaza al antiguo
+# 'onlyBuiltDependencies') aprueba explícitamente qué paquetes
+# pueden ejecutar sus scripts de build.
+#
+# esbuild es usado internamente por Vite y su script de build es
+# legítimo y necesario para compilar el proyecto.
+allowBuilds:
+  esbuild: true
