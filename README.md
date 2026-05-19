@@ -86,14 +86,80 @@ Ambos valores se obtienen en Supabase → Project Settings → API.
 
 ## Instalación y ejecución local
 
-Requisitos: Node.js 18+ y pnpm.
+### Requisitos previos
+
+#### Node.js 18 o superior
+
+Verificar si ya está instalado:
+```bash
+node --version
+```
+
+Si no lo tienes o tu versión es menor a 18, instalarlo:
+
+- **Windows / macOS:** descargar el instalador LTS desde [nodejs.org](https://nodejs.org/) y ejecutarlo (siguiente → siguiente → finalizar).
+- **Windows con winget:**
+  ```powershell
+  winget install OpenJS.NodeJS.LTS
+  ```
+- **macOS con Homebrew:**
+  ```bash
+  brew install node
+  ```
+- **Linux (Ubuntu/Debian):**
+  ```bash
+  curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
+  sudo apt-get install -y nodejs
+  ```
+- **Multi-versión (recomendado para devs):** usar [nvm](https://github.com/nvm-sh/nvm) (Linux/macOS) o [nvm-windows](https://github.com/coreybutler/nvm-windows):
+  ```bash
+  nvm install 20
+  nvm use 20
+  ```
+
+Verificar la instalación con `node --version` (debe mostrar `v18.x` o superior) y `npm --version`.
+
+#### pnpm (gestor de paquetes)
+
+Más rápido y eficiente en disco que npm. Si no lo tienes instalado:
+
+  **Opción 1 — vía npm (la más sencilla):**
+  ```bash
+  npm install -g pnpm
+  ```
+
+  **Opción 2 — vía Corepack (incluido en Node 16.10+):**
+  ```bash
+  corepack enable pnpm
+  ```
+
+  **Opción 3 — Windows con PowerShell:**
+  ```powershell
+  iwr https://get.pnpm.io/install.ps1 -useb | iex
+  ```
+
+  Verificar con `pnpm --version`.
+
+### Pasos
 
 ```bash
+# 1. Clonar el repositorio
+git clone https://github.com/blec98/Salon-de-belleza.git
+cd Salon-de-belleza
+
+# 2. Instalar dependencias
 pnpm install
+
+# 3. Crear archivo .env en la raíz con las claves de Supabase
+#    (ver sección "Variables de entorno" arriba)
+
+# 4. Levantar el servidor de desarrollo
 pnpm dev
 ```
 
 El servidor queda disponible en red local (`host: true`), por lo que se puede acceder desde un teléfono en la misma WiFi.
+
+> **Nota:** si prefieres usar `npm` o `yarn` en lugar de `pnpm`, los comandos son equivalentes: `npm install`/`npm run dev` o `yarn`/`yarn dev`. Aunque el proyecto fue desarrollado con pnpm y el `pnpm-lock.yaml` garantiza versiones exactas.
 
 ## Build y deploy
 
