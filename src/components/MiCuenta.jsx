@@ -46,7 +46,7 @@ function MiCuenta({ perfil, authUser, onPerfilUpdate, navegar }) {
           </div>
           <div>
             <h2 className="seccion-titulo mb-0" style={{ fontSize: "1.5rem" }}>
-              Hola, {perfil?.nombre || "usuaria"}
+              {perfil?.nombre ? `Hola, ${perfil.nombre}` : "Hola"}
             </h2>
             <p className="text-muted mb-0 small">{authUser?.email}</p>
           </div>
@@ -85,37 +85,95 @@ function MiCuenta({ perfil, authUser, onPerfilUpdate, navegar }) {
 function MisReservas({ userId, navegar }) {
   const [reservas, setReservas] = useState([]);
   const [cargando, setCargando] = useState(true);
+  const [error, setError] = useState(false);
   const [cancelando, setCancelando] = useState(null);
 
   useEffect(() => {
-    cargar();
+    let cancelado = false;
+    const timeoutSeguridad = setTimeout(() => {
+      if (!cancelado) {
+        setCargando(false);
+        setError(true);
+      }
+    }, 8000);
+
+    (async () => {
+      try {
+        const { data, error: err } = await supabase
+          .from("reservas")
+          .select(`
+            id, codigo, estado, fecha, hora,
+            total_precio, descuento_monto, total_duracion,
+            cupon_codigo, creado_en,
+            profesionales(nombre),
+            reserva_servicios(nombre_snap, precio_snap)
+          `)
+          .eq("usuario_id", userId)
+          .order("fecha", { ascending: false });
+        if (cancelado) return;
+        if (err) {
+          console.error("[reservas]", err);
+          setError(true);
+        } else {
+          setReservas(data || []);
+        }
+      } catch (e) {
+        if (!cancelado) {
+          console.error("[reservas] excepcion:", e);
+          setError(true);
+        }
+      } finally {
+        if (!cancelado) {
+          clearTimeout(timeoutSeguridad);
+          setCargando(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelado = true;
+      clearTimeout(timeoutSeguridad);
+    };
   }, [userId]);
 
   async function cargar() {
     setCargando(true);
-    const { data } = await supabase
-      .from("reservas")
-      .select(`
-        id, codigo, estado, fecha, hora,
-        total_precio, descuento_monto, total_duracion,
-        cupon_codigo, creado_en,
-        profesionales(nombre),
-        reserva_servicios(nombre_snap, precio_snap)
-      `)
-      .eq("usuario_id", userId)
-      .order("fecha", { ascending: false });
-    setReservas(data || []);
-    setCargando(false);
+    setError(false);
+    try {
+      const { data, error: err } = await supabase
+        .from("reservas")
+        .select(`
+          id, codigo, estado, fecha, hora,
+          total_precio, descuento_monto, total_duracion,
+          cupon_codigo, creado_en,
+          profesionales(nombre),
+          reserva_servicios(nombre_snap, precio_snap)
+        `)
+        .eq("usuario_id", userId)
+        .order("fecha", { ascending: false });
+      if (err) { setError(true); return; }
+      setReservas(data || []);
+    } catch (e) {
+      console.error("[reservas]", e);
+      setError(true);
+    } finally {
+      setCargando(false);
+    }
   }
 
   async function cancelar(id) {
     setCancelando(id);
-    await supabase
-      .from("reservas")
-      .update({ estado: "cancelada", cancelado_en: new Date().toISOString() })
-      .eq("id", id);
-    await cargar();
-    setCancelando(null);
+    try {
+      await supabase
+        .from("reservas")
+        .update({ estado: "cancelada", cancelado_en: new Date().toISOString() })
+        .eq("id", id);
+      await cargar();
+    } catch (e) {
+      console.error("[cancelar]", e);
+    } finally {
+      setCancelando(null);
+    }
   }
 
   if (cargando) {
@@ -124,6 +182,19 @@ function MisReservas({ userId, navegar }) {
         <div className="spinner-border" style={{ color: "var(--rosa)" }} role="status">
           <span className="visually-hidden">Cargando…</span>
         </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="servicios-vacio">
+        <i className="bi bi-wifi-off" aria-hidden="true"></i>
+        <p>No pudimos cargar tus reservas. Revisa tu conexion.</p>
+        <button className="btn btn-rosa mt-3" onClick={cargar}>
+          <i className="bi bi-arrow-clockwise me-2" aria-hidden="true"></i>
+          Reintentar
+        </button>
       </div>
     );
   }
@@ -283,8 +354,8 @@ function MiPerfil({ perfil, userId, onActualizar }) {
             <dl className="perfil-dl">
               <dt>Nombre</dt>
               <dd>{perfil?.nombre} {perfil?.apellido}</dd>
-              <dt>RUT</dt>
-              <dd>{perfil?.rut || <span className="text-muted">No registrado</span>}</dd>
+              <dt>Correo</dt>
+              <dd>{perfil?.email || authUser?.email}</dd>
               <dt>Teléfono</dt>
               <dd>{perfil?.telefono || <span className="text-muted">No registrado</span>}</dd>
             </dl>

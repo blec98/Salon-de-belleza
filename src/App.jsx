@@ -126,7 +126,13 @@ function App() {
   }
 
   async function handleLogout() {
-    await logout();
+    // Limpiar estado local SIEMPRE, aunque signOut falle/cuelgue.
+    // Si falla, supabase detectara el token invalido en el proximo getSession().
+    try {
+      await logout();
+    } catch (err) {
+      console.error("[logout] Error al cerrar sesion:", err);
+    }
     setAuthUser(null);
     setPerfil(null);
     navegar("inicio");

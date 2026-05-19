@@ -155,7 +155,7 @@ function Navbar({ seccionActiva, navegar, authUser, perfil, onLogout }) {
                 {menuUsuario && (
                   <div className="nav-usuario-menu">
                     <div className="nav-usuario-header">
-                      <strong>{perfil?.nombre || "Usuaria"}</strong>
+                      <strong>{perfil?.nombre || authUser?.email?.split("@")[0] || "Cuenta"}</strong>
                       <small>{authUser.email}</small>
                     </div>
                     <button

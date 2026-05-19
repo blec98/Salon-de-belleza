@@ -1,15 +1,36 @@
 -- =============================================================
 -- database.sql — Belleza & Estilo · Supabase (PostgreSQL)
 -- =============================================================
--- Ejecución: Dashboard Supabase → SQL Editor → Run
--- Orden: extensions → tipos → tablas → RLS → funciones → datos
+-- Ejecución: Dashboard Supabase → SQL Editor → Run (script completo)
+--
+-- Orden de secciones:
+--   0  Extensiones (uuid-ossp en public, pg_trgm en schema extensions)
+--   1  Tipos ENUM
+--   2  Perfiles + triggers (crear perfil, inmutabilidad, actualizado_en)
+--   3  Ruts registrados (anti-multicuenta)
+--   4  Profesionales
+--   5  Servicios (con seed de catálogo mid-tier Osorno)
+--   6  Horarios (slots globales)
+--   7  Reservas
+--   8  Servicios de cada reserva (N:M)
+--   9  Cupones
+--  10  Configuración global
+--  11  Logs admin
+--  12  Row Level Security (RLS) + policies
+--  13  Funciones de negocio
+--  14  Views para panel admin (security_invoker)
+--  15  Storage (bucket público "imagenes")
+--  16  REVOKE EXECUTE en funciones internas
 -- =============================================================
 
 -- ────────────────────────────────────────────────────────────
 -- 0. EXTENSIONES
 -- ────────────────────────────────────────────────────────────
 create extension if not exists "uuid-ossp";
-create extension if not exists "pg_trgm"; -- búsqueda de texto difuso
+
+-- pg_trgm en schema separado (no en public, por hardening de seguridad)
+create schema if not exists extensions;
+create extension if not exists "pg_trgm" with schema extensions; -- búsqueda de texto difuso
 
 
 -- ────────────────────────────────────────────────────────────
@@ -44,7 +65,9 @@ comment on table public.perfiles is 'Perfil de cada usuario autenticado.';
 
 -- Trigger: actualizar actualizado_en en cualquier UPDATE
 create or replace function public.fn_set_actualizado_en()
-returns trigger language plpgsql as $$
+returns trigger language plpgsql
+set search_path = public, pg_catalog
+as $$
 begin
   new.actualizado_en = now();
   return new;
@@ -55,11 +78,44 @@ create trigger trg_perfiles_actualizado_en
   before update on public.perfiles
   for each row execute function public.fn_set_actualizado_en();
 
+-- Trigger: proteger columnas inmutables del perfil.
+-- RUT y email no se pueden cambiar una vez creados (anti-fraude).
+-- El rol solo lo puede cambiar un admin (defensa en profundidad sobre RLS).
+create or replace function public.fn_perfiles_inmutables()
+returns trigger language plpgsql
+set search_path = public, pg_catalog
+as $$
+begin
+  -- RUT inmutable: si ya existe, no se puede modificar
+  if old.rut is not null and new.rut is distinct from old.rut then
+    raise exception 'El RUT no se puede modificar una vez registrado';
+  end if;
+
+  -- Email inmutable desde la app (Supabase Auth lo gestiona aparte)
+  if new.email is distinct from old.email then
+    raise exception 'El email no se puede modificar desde el perfil';
+  end if;
+
+  -- Rol: solo admin puede cambiarlo
+  if new.rol is distinct from old.rol and not public.fn_es_admin() then
+    raise exception 'No tienes permisos para cambiar el rol';
+  end if;
+
+  return new;
+end;
+$$;
+
+create trigger trg_perfiles_inmutables
+  before update on public.perfiles
+  for each row execute function public.fn_perfiles_inmutables();
+
 -- Trigger: crear perfil automáticamente al registrar usuario en Supabase Auth
 -- IMPORTANTE: usa coalesce + nullif para evitar insertar cadenas vacías
 --             que fallarían el check de nombre (mínimo 2 caracteres).
 create or replace function public.fn_crear_perfil_usuario()
-returns trigger language plpgsql security definer as $$
+returns trigger language plpgsql security definer
+set search_path = public, pg_catalog
+as $$
 declare
   v_rut text;
 begin
@@ -125,7 +181,7 @@ insert into public.profesionales (nombre, iniciales, especialidad) values
 
 
 -- ────────────────────────────────────────────────────────────
--- 4. SERVICIOS
+-- 5. SERVICIOS
 -- ────────────────────────────────────────────────────────────
 create table public.servicios (
   id             serial               primary key,
@@ -175,7 +231,7 @@ select setval('servicios_id_seq', (select max(id) from public.servicios));
 
 
 -- ────────────────────────────────────────────────────────────
--- 5. HORARIOS (slots disponibles globales)
+-- 6. HORARIOS (slots disponibles globales)
 -- ────────────────────────────────────────────────────────────
 create table public.slots_horario (
   id   serial primary key,
@@ -188,7 +244,7 @@ insert into public.slots_horario (hora) values
 
 
 -- ────────────────────────────────────────────────────────────
--- 6. RESERVAS
+-- 7. RESERVAS
 -- ────────────────────────────────────────────────────────────
 create table public.reservas (
   id                uuid           primary key default uuid_generate_v4(),
@@ -234,7 +290,7 @@ comment on table public.reservas is 'Citas reservadas por clientes.';
 
 
 -- ────────────────────────────────────────────────────────────
--- 7. SERVICIOS DE CADA RESERVA (relación N:M)
+-- 8. SERVICIOS DE CADA RESERVA (relación N:M)
 -- ────────────────────────────────────────────────────────────
 create table public.reserva_servicios (
   id            serial  primary key,
@@ -252,7 +308,7 @@ comment on table public.reserva_servicios is 'Servicios incluidos en cada reserv
 
 
 -- ────────────────────────────────────────────────────────────
--- 8. CUPONES DE DESCUENTO
+-- 9. CUPONES DE DESCUENTO
 -- ────────────────────────────────────────────────────────────
 create table public.cupones (
   id             serial      primary key,
@@ -283,7 +339,7 @@ comment on table public.cupones is 'Cupones de descuento para reservas.';
 
 
 -- ────────────────────────────────────────────────────────────
--- 9. CONFIGURACIÓN GLOBAL DEL SALÓN
+-- 10. CONFIGURACIÓN GLOBAL DEL SALÓN
 -- ────────────────────────────────────────────────────────────
 create table public.configuracion (
   clave          text primary key,
@@ -305,7 +361,7 @@ comment on table public.configuracion is 'Configuración global editable desde e
 
 
 -- ────────────────────────────────────────────────────────────
--- 10. LOGS DE ACTIVIDAD ADMIN
+-- 11. LOGS DE ACTIVIDAD ADMIN
 -- ────────────────────────────────────────────────────────────
 create table public.logs_admin (
   id         bigserial   primary key,
@@ -324,7 +380,7 @@ comment on table public.logs_admin is 'Auditoría de acciones realizadas por adm
 
 
 -- ────────────────────────────────────────────────────────────
--- 11. ROW LEVEL SECURITY (RLS)
+-- 12. ROW LEVEL SECURITY (RLS)
 -- ────────────────────────────────────────────────────────────
 alter table public.perfiles          enable row level security;
 alter table public.ruts_registrados  enable row level security;
@@ -339,7 +395,9 @@ alter table public.logs_admin        enable row level security;
 
 -- Helper: saber si el usuario actual es admin
 create or replace function public.fn_es_admin()
-returns boolean language sql security definer stable as $$
+returns boolean language sql security definer stable
+set search_path = public, pg_catalog
+as $$
   select exists (
     select 1 from public.perfiles
     where id = auth.uid() and rol = 'admin'
@@ -471,7 +529,7 @@ create policy "logs: solo admin"
 
 
 -- ────────────────────────────────────────────────────────────
--- 12. FUNCIONES DE NEGOCIO
+-- 13. FUNCIONES DE NEGOCIO
 -- ────────────────────────────────────────────────────────────
 
 -- Verificar disponibilidad de un slot
@@ -480,7 +538,9 @@ create or replace function public.fn_slot_disponible(
   p_fecha          date,
   p_hora           time
 )
-returns boolean language sql stable security definer as $$
+returns boolean language sql stable security definer
+set search_path = public, pg_catalog
+as $$
   select not exists (
     select 1 from public.reservas
     where profesional_id = p_profesional_id
@@ -495,7 +555,9 @@ create or replace function public.fn_slots_ocupados(
   p_profesional_id integer,
   p_fecha          date
 )
-returns table(hora time) language sql stable security definer as $$
+returns table(hora time) language sql stable security definer
+set search_path = public, pg_catalog
+as $$
   select r.hora
   from public.reservas r
   where r.profesional_id = p_profesional_id
@@ -509,7 +571,9 @@ create or replace function public.fn_validar_cupon(
   p_total_precio  integer,
   p_usuario_id    uuid default null
 )
-returns jsonb language plpgsql security definer as $$
+returns jsonb language plpgsql security definer
+set search_path = public, pg_catalog
+as $$
 declare
   v_cupon     record;
   v_descuento integer := 0;
@@ -546,7 +610,9 @@ $$;
 
 -- KPIs para el dashboard admin
 create or replace function public.fn_dashboard_kpis()
-returns jsonb language plpgsql security definer as $$
+returns jsonb language plpgsql security definer
+set search_path = public, pg_catalog
+as $$
 declare
   v_result jsonb;
 begin
@@ -578,11 +644,12 @@ $$;
 
 
 -- ────────────────────────────────────────────────────────────
--- 13. VIEWS ÚTILES PARA ADMIN
+-- 14. VIEWS ÚTILES PARA ADMIN
 -- ────────────────────────────────────────────────────────────
 
 -- Reservas con info completa para el panel admin
-create or replace view public.v_reservas_admin as
+create or replace view public.v_reservas_admin
+  with (security_invoker = true) as
   select
     r.id,
     r.codigo,
@@ -619,7 +686,8 @@ create or replace view public.v_reservas_admin as
   left join public.perfiles u on u.id = r.usuario_id;
 
 -- Métricas por servicio
-create or replace view public.v_metricas_servicios as
+create or replace view public.v_metricas_servicios
+  with (security_invoker = true) as
   select
     s.id,
     s.nombre,
@@ -635,7 +703,8 @@ create or replace view public.v_metricas_servicios as
   order by total_reservas desc;
 
 -- Clientes con conteo de reservas para el panel admin
-create or replace view public.v_clientes_admin as
+create or replace view public.v_clientes_admin
+  with (security_invoker = true) as
   select
     p.id,
     p.email,
@@ -655,7 +724,7 @@ create or replace view public.v_clientes_admin as
 
 
 -- ────────────────────────────────────────────────────────────
--- 14. STORAGE — BUCKET DE IMÁGENES
+-- 15. STORAGE — BUCKET DE IMÁGENES
 -- ────────────────────────────────────────────────────────────
 -- Ejecutar desde SQL Editor (requiere permiso de superusuario Supabase).
 -- El bucket "imagenes" es público: cualquiera puede leer las URLs,
@@ -665,10 +734,10 @@ insert into storage.buckets (id, name, public)
 values ('imagenes', 'imagenes', true)
 on conflict (id) do nothing;
 
--- Lectura pública de cualquier archivo del bucket
-create policy "imagenes: lectura publica"
-  on storage.objects for select
-  using (bucket_id = 'imagenes');
+-- NOTA DE SEGURIDAD: los buckets publicos sirven URLs directas a traves de
+-- /storage/v1/object/public/<bucket>/<path> sin necesidad de policy SELECT.
+-- Una policy SELECT permite ademas LISTAR el bucket, lo cual exponemos
+-- mas de lo necesario. Por eso NO creamos policy de lectura aqui.
 
 -- Solo el admin autenticado puede subir archivos
 create policy "imagenes: admin sube"
@@ -695,16 +764,44 @@ create policy "imagenes: admin elimina"
   );
 
 
+-- ────────────────────────────────────────────────────────────
+-- 16. REVOKE EXECUTE en funciones que NO son RPC publicas
+-- ────────────────────────────────────────────────────────────
+-- Por defecto Postgres concede EXECUTE a PUBLIC en todas las funciones.
+-- En Supabase eso significa que anon/authenticated pueden llamarlas vía
+-- /rest/v1/rpc/<nombre>. Solo fn_dashboard_kpis se usa como RPC desde
+-- el frontend (Admin.jsx). Las demás son triggers o helpers internos.
+
+revoke execute on function public.fn_set_actualizado_en()        from anon, authenticated;
+revoke execute on function public.fn_perfiles_inmutables()       from anon, authenticated;
+revoke execute on function public.fn_crear_perfil_usuario()      from anon, authenticated;
+revoke execute on function public.fn_es_admin()                  from anon, authenticated;
+revoke execute on function public.fn_slot_disponible(integer, date, time) from anon, authenticated;
+revoke execute on function public.fn_slots_ocupados(integer, date)         from anon, authenticated;
+revoke execute on function public.fn_validar_cupon(text, integer, uuid)    from anon, authenticated;
+-- fn_dashboard_kpis se queda accesible: tiene check interno fn_es_admin()
+
+
 -- ════════════════════════════════════════════════════════════
 -- FIN DEL SCRIPT
 -- ════════════════════════════════════════════════════════════
 --
 -- PRÓXIMOS PASOS TRAS EJECUTAR:
 --
---   1. Ir a Authentication → Settings y verificar que esté
---      activo "Enable email confirmations".
+--   1. Authentication → Settings:
+--        a. Activar "Enable email confirmations".
+--        b. Activar "Leaked password protection" (HaveIBeenPwned).
+--        c. En "URL Configuration" agregar:
+--             Site URL: https://<tu-dominio>.vercel.app
+--             Redirect URLs: https://<tu-dominio>.vercel.app/**
+--             (y http://localhost:5173/** para desarrollo).
 --
---   2. Para crear el primer usuario ADMIN:
+--   2. Storage → bucket "imagenes" → carpeta "servicios/":
+--      Subir las imágenes .webp correspondientes a cada servicio.
+--      El nombre del archivo debe coincidir con el campo imagen_path
+--      de la tabla servicios (ej: corte-cabello-dama.webp).
+--
+--   3. Para crear el primer usuario ADMIN:
 --        a. Registrarse normalmente desde la web del salón.
 --        b. Confirmar el correo.
 --        c. Ejecutar en SQL Editor:
@@ -712,8 +809,8 @@ create policy "imagenes: admin elimina"
 --             set rol = 'admin'
 --             where email = 'tu@correo.com';
 --
---   3. Configurar variables de entorno en Vercel:
---        VITE_SUPABASE_URL     → Project Settings → API → Project URL
+--   4. Configurar variables de entorno en Vercel:
+--        VITE_SUPABASE_URL      → Project Settings → API → Project URL
 --        VITE_SUPABASE_ANON_KEY → Project Settings → API → anon key
 --
 -- ════════════════════════════════════════════════════════════
