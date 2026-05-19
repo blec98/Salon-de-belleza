@@ -3,24 +3,51 @@
    Filtra por categoría, busca por nombre y permite Reservar o Cotizar
    =========================================================== */
 
-import { useState, useMemo } from "react";
-import { SERVICIOS, CATEGORIAS, formatoCLP } from "../data/data.js";
+import { useState, useEffect, useMemo } from "react";
+import { CATEGORIAS, formatoCLP } from "../data/data.js";
+import { supabase } from "../lib/supabase.js";
+import { urlServicio } from "../lib/supabaseStorage.js";
 
 function Servicios({ navegar }) {
+  const [servicios, setServicios] = useState([]);
+  const [cargando, setCargando] = useState(true);
   const [categoria, setCategoria] = useState("Todos");
   const [busqueda, setBusqueda] = useState("");
 
+  useEffect(() => {
+    supabase
+      .from("servicios")
+      .select("id,nombre,categoria,descripcion,precio,duracion_min,unidad,destacado,imagen_path,imagen_posicion")
+      .eq("activo", true)
+      .order("categoria")
+      .order("nombre")
+      .then(({ data }) => {
+        setServicios(data || []);
+        setCargando(false);
+      });
+  }, []);
+
   const filtrados = useMemo(() => {
     const term = busqueda.trim().toLowerCase();
-    return SERVICIOS.filter((s) => {
+    return servicios.filter((s) => {
       const matchCat = categoria === "Todos" || s.categoria === categoria;
       const matchBus =
         term === "" ||
         s.nombre.toLowerCase().includes(term) ||
-        s.descripcion.toLowerCase().includes(term);
+        (s.descripcion || "").toLowerCase().includes(term);
       return matchCat && matchBus;
     });
-  }, [categoria, busqueda]);
+  }, [servicios, categoria, busqueda]);
+
+  if (cargando) {
+    return (
+      <div className="d-flex justify-content-center align-items-center" style={{ minHeight: "60vh", paddingTop: "90px" }}>
+        <div className="spinner-border" style={{ color: "var(--rosa)" }} role="status">
+          <span className="visually-hidden">Cargando…</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fade-in" style={{ paddingTop: "90px" }}>
@@ -97,11 +124,13 @@ function Servicios({ navegar }) {
                 <div className="servicio-card">
                   <div className="servicio-card-img">
                     <img
-                      src={s.imagen}
+                      src={urlServicio(s.imagen_path) || "/images/servicios/placeholder.webp"}
                       alt={s.nombre}
                       width="600"
                       height="400"
                       loading="lazy"
+                      style={{ objectPosition: s.imagen_posicion || "center" }}
+                      onError={(e) => { e.currentTarget.style.display = "none"; }}
                     />
                     {s.destacado && (
                       <span className="badge-destacado">POPULAR</span>
@@ -114,7 +143,7 @@ function Servicios({ navegar }) {
                     <div className="servicio-meta">
                       <span>
                         <i className="bi bi-clock" aria-hidden="true"></i>
-                        {s.duracionMin} min
+                        {s.duracion_min} min
                       </span>
                       <span>
                         <i className="bi bi-tag" aria-hidden="true"></i>

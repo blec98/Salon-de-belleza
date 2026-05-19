@@ -27,7 +27,7 @@ export const ESTUDIANTE = {
   nombre: "Bernardo Cárdenas Carrillo",
   github: "https://github.com/blec98",
   institucion: "INACAP",
-  caso: "Caso de Estudio 1 — Aplicación Web SPA",
+  caso: "Caso de Estudio — Aplicación Web SPA",
 };
 
 // Estadísticas del salón (mostradas en hero)

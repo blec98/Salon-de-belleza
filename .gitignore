@@ -48,3 +48,16 @@ ehthumbs.db
 # ── Misc ──────────────────────────────────────────────────
 *.pem
 *.local
+CLAUDE.md
+
+# ── Cache y temporales ────────────────────────────────────
+.cache
+*.tgz
+*.tar.gz
+coverage/
+.temp/
+tmp/
+
+# ── pnpm ──────────────────────────────────────────────────
+.pnpm-store/
+.pnpm-debug.log

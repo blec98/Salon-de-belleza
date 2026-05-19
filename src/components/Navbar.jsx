@@ -1,18 +1,19 @@
 /* ===========================================================
-   Navbar.jsx - Menú de navegación + toggle de tema
+   Navbar.jsx - Menú de navegación + toggle de tema + auth
    =========================================================== */
 
 import { useState, useEffect, useRef } from "react";
 import { leerTema, escribirTema } from "../lib/storage.js";
 
-// Tema claro por defecto. Solo se aplica oscuro si el usuario lo eligió.
 function temaInicial() {
   return leerTema() === "oscuro" ? "oscuro" : "claro";
 }
 
-function Navbar({ seccionActiva, navegar }) {
+function Navbar({ seccionActiva, navegar, authUser, perfil, onLogout }) {
   const [tema, setTema] = useState(temaInicial);
+  const [menuUsuario, setMenuUsuario] = useState(false);
   const navRef = useRef(null);
+  const menuRef = useRef(null);
 
   useEffect(() => {
     document.documentElement.setAttribute("data-tema", tema);
@@ -34,6 +35,7 @@ function Navbar({ seccionActiva, navegar }) {
       if (menu && menu.classList.contains("show")) {
         menu.classList.remove("show");
       }
+      setMenuUsuario(false);
     }
     document.addEventListener("click", alClickFuera);
     document.addEventListener("keydown", alEscape);
@@ -42,6 +44,18 @@ function Navbar({ seccionActiva, navegar }) {
       document.removeEventListener("keydown", alEscape);
     };
   }, []);
+
+  // Cerrar menú de usuario al click fuera
+  useEffect(() => {
+    if (!menuUsuario) return;
+    function cerrar(e) {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setMenuUsuario(false);
+      }
+    }
+    document.addEventListener("mousedown", cerrar);
+    return () => document.removeEventListener("mousedown", cerrar);
+  }, [menuUsuario]);
 
   const enlaces = [
     { id: "inicio", texto: "Inicio", icono: "bi-house-door" },
@@ -61,7 +75,12 @@ function Navbar({ seccionActiva, navegar }) {
   function alClick(id) {
     navegar(id);
     cerrarMenuMovil();
+    setMenuUsuario(false);
   }
+
+  const iniciales = authUser
+    ? (perfil?.nombre?.[0] || "") + (perfil?.apellido?.[0] || "")
+    : "";
 
   return (
     <nav
@@ -107,6 +126,8 @@ function Navbar({ seccionActiva, navegar }) {
                 </button>
               </li>
             ))}
+
+            {/* Reservar CTA */}
             <li className="nav-item">
               <button
                 className={
@@ -115,13 +136,72 @@ function Navbar({ seccionActiva, navegar }) {
                 }
                 onClick={() => alClick("reservar")}
               >
-                <i
-                  className="bi bi-calendar-check me-1"
-                  aria-hidden="true"
-                ></i>
+                <i className="bi bi-calendar-check me-1" aria-hidden="true"></i>
                 Reservar
               </button>
             </li>
+
+            {/* Autenticación */}
+            {authUser ? (
+              <li className="nav-item" style={{ position: "relative" }} ref={menuRef}>
+                <button
+                  className="nav-avatar-btn"
+                  onClick={() => setMenuUsuario((v) => !v)}
+                  aria-label="Menú de usuario"
+                  aria-expanded={menuUsuario}
+                >
+                  <span className="nav-avatar">{iniciales || "U"}</span>
+                </button>
+                {menuUsuario && (
+                  <div className="nav-usuario-menu">
+                    <div className="nav-usuario-header">
+                      <strong>{perfil?.nombre || "Usuaria"}</strong>
+                      <small>{authUser.email}</small>
+                    </div>
+                    <button
+                      className="nav-usuario-item"
+                      onClick={() => alClick("mi-cuenta")}
+                    >
+                      <i className="bi bi-person-circle me-2" aria-hidden="true"></i>
+                      Mi cuenta
+                    </button>
+                    {perfil?.rol === "admin" && (
+                      <button
+                        className="nav-usuario-item"
+                        onClick={() => alClick("admin")}
+                      >
+                        <i className="bi bi-shield-lock me-2" aria-hidden="true"></i>
+                        Panel Admin
+                      </button>
+                    )}
+                    <div className="nav-usuario-divider"></div>
+                    <button
+                      className="nav-usuario-item nav-usuario-salir"
+                      onClick={async () => {
+                        cerrarMenuMovil();
+                        setMenuUsuario(false);
+                        await onLogout();
+                      }}
+                    >
+                      <i className="bi bi-box-arrow-right me-2" aria-hidden="true"></i>
+                      Cerrar sesión
+                    </button>
+                  </div>
+                )}
+              </li>
+            ) : (
+              <li className="nav-item">
+                <button
+                  className="btn-nav-ingresar"
+                  onClick={() => alClick("auth")}
+                >
+                  <i className="bi bi-box-arrow-in-right me-1" aria-hidden="true"></i>
+                  Ingresar
+                </button>
+              </li>
+            )}
+
+            {/* Toggle tema */}
             <li className="nav-item">
               <button
                 className="btn-tema"
