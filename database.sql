@@ -33,6 +33,7 @@ create table public.perfiles (
   -- NOTA: apellido sin mínimo para que el trigger pueda insertar '-' como fallback
   apellido       text        not null check (char_length(apellido) <= 120),
   telefono       text        check (telefono ~ '^\+?56\s?9\s?\d{4}\s?\d{4}$'),
+  rut            text        unique,                  -- prevención de multicuentas
   rol            rol_usuario not null default 'cliente',
   activo         boolean     not null default true,   -- false = baneado
   creado_en      timestamptz not null default now(),
@@ -59,14 +60,27 @@ create trigger trg_perfiles_actualizado_en
 --             que fallarían el check de nombre (mínimo 2 caracteres).
 create or replace function public.fn_crear_perfil_usuario()
 returns trigger language plpgsql security definer as $$
+declare
+  v_rut text;
 begin
-  insert into public.perfiles (id, email, nombre, apellido)
+  v_rut := nullif(trim(coalesce(new.raw_user_meta_data->>'rut', '')), '');
+
+  insert into public.perfiles (id, email, nombre, apellido, telefono, rut)
   values (
     new.id,
     new.email,
     coalesce(nullif(trim(new.raw_user_meta_data->>'nombre'),  ''), 'Usuario'),
-    coalesce(nullif(trim(new.raw_user_meta_data->>'apellido'), ''), '-')
+    coalesce(nullif(trim(new.raw_user_meta_data->>'apellido'), ''), '-'),
+    nullif(trim(coalesce(new.raw_user_meta_data->>'telefono', '')), ''),
+    v_rut
   );
+
+  if v_rut is not null then
+    insert into public.ruts_registrados (rut, usuario_id)
+    values (v_rut, new.id)
+    on conflict (rut) do nothing;
+  end if;
+
   return new;
 end;
 $$;
@@ -77,7 +91,21 @@ create trigger trg_crear_perfil
 
 
 -- ────────────────────────────────────────────────────────────
--- 3. PROFESIONALES
+-- 3. RUTS REGISTRADOS (prevención de multicuentas)
+--    Tabla auxiliar de consulta rápida. El trigger de perfiles
+--    la pobla automáticamente al crear cada cuenta.
+-- ────────────────────────────────────────────────────────────
+create table public.ruts_registrados (
+  rut          text        primary key,
+  usuario_id   uuid        not null references public.perfiles(id) on delete cascade,
+  registrado_en timestamptz not null default now()
+);
+
+comment on table public.ruts_registrados is 'Índice de RUTs para prevenir cuentas duplicadas.';
+
+
+-- ────────────────────────────────────────────────────────────
+-- 4. PROFESIONALES
 -- ────────────────────────────────────────────────────────────
 create table public.profesionales (
   id            serial      primary key,
@@ -298,7 +326,8 @@ comment on table public.logs_admin is 'Auditoría de acciones realizadas por adm
 -- ────────────────────────────────────────────────────────────
 -- 11. ROW LEVEL SECURITY (RLS)
 -- ────────────────────────────────────────────────────────────
-alter table public.perfiles         enable row level security;
+alter table public.perfiles          enable row level security;
+alter table public.ruts_registrados  enable row level security;
 alter table public.profesionales     enable row level security;
 alter table public.servicios         enable row level security;
 alter table public.slots_horario     enable row level security;
@@ -333,6 +362,14 @@ create policy "perfiles: editar propio"
 create policy "perfiles: admin total"
   on public.perfiles for all
   using (public.fn_es_admin());
+
+-- ── RUTS REGISTRADOS ──────────────────────────────────────
+-- Lectura pública: permite verificar antes de registrarse sin auth
+create policy "ruts: lectura publica"
+  on public.ruts_registrados for select using (true);
+
+-- Sin política de INSERT/UPDATE/DELETE para usuarios: solo el trigger
+-- (security definer) puede escribir en esta tabla.
 
 -- ── PROFESIONALES ─────────────────────────────────────────
 create policy "profesionales: lectura pública"

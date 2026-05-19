@@ -5,17 +5,29 @@
 import { supabase } from "./supabase.js";
 
 /* ── REGISTRO ─────────────────────────────────────────────── */
-export async function register({ nombre, apellido, email, password, telefono }) {
+export async function register({ nombre, apellido, email, password, telefono, rut }) {
+  // Verificar que el RUT no esté ya registrado
+  if (rut) {
+    const { data: rutExistente } = await supabase
+      .from("ruts_registrados")
+      .select("rut")
+      .eq("rut", rut)
+      .maybeSingle();
+
+    if (rutExistente) {
+      return { ok: false, error: "Ya existe una cuenta registrada con ese RUT." };
+    }
+  }
+
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
     options: {
-      data: { nombre, apellido, telefono: telefono || null },
+      data: { nombre, apellido, telefono: telefono || null, rut: rut || null },
     },
   });
 
   if (error) return { ok: false, error: traducirError(error.message) };
-
   return { ok: true, user: data.user };
 }
 

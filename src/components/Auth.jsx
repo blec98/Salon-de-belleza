@@ -5,6 +5,38 @@
 import { useState } from "react";
 import { login, register } from "../lib/auth.js";
 
+/* ── Helpers RUT ─────────────────────────────────────────── */
+function formatearRutInput(val) {
+  const clean = val.replace(/[^0-9kK]/g, "").toUpperCase();
+  if (clean.length <= 1) return clean;
+  const dv   = clean.slice(-1);
+  const body = clean.slice(0, -1);
+  const conPuntos = body.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  return `${conPuntos}-${dv}`;
+}
+
+function validarRut(rut) {
+  const clean = rut.replace(/[.\-\s]/g, "").toUpperCase();
+  if (clean.length < 2) return false;
+  const body = clean.slice(0, -1);
+  const dv   = clean.slice(-1);
+  if (!/^\d+$/.test(body)) return false;
+  let suma = 0, multiplo = 2;
+  for (let i = body.length - 1; i >= 0; i--) {
+    suma += parseInt(body[i]) * multiplo;
+    multiplo = multiplo < 7 ? multiplo + 1 : 2;
+  }
+  const resto = 11 - (suma % 11);
+  const dvEsperado = resto === 11 ? "0" : resto === 10 ? "K" : String(resto);
+  return dv === dvEsperado;
+}
+
+function normalizarRut(rut) {
+  const clean = rut.replace(/[.\-\s]/g, "").toUpperCase();
+  return `${clean.slice(0, -1)}-${clean.slice(-1)}`;
+}
+
+/* ── ROOT ────────────────────────────────────────────────── */
 function Auth({ navegar, onAuthSuccess }) {
   const [tab, setTab] = useState("login");
 
@@ -77,10 +109,7 @@ function FormLogin({ navegar, onSuccess }) {
     setCargando(true);
     const res = await login(campos.email, campos.password);
     setCargando(false);
-    if (!res.ok) {
-      setError(res.error);
-      return;
-    }
+    if (!res.ok) { setError(res.error); return; }
     onSuccess(res.user, res.perfil);
   }
 
@@ -123,11 +152,7 @@ function FormLogin({ navegar, onSuccess }) {
         </div>
       )}
 
-      <button
-        type="submit"
-        className="btn btn-rosa w-100"
-        disabled={cargando}
-      >
+      <button type="submit" className="btn btn-rosa w-100" disabled={cargando}>
         {cargando ? (
           <>
             <span className="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
@@ -158,15 +183,11 @@ function FormLogin({ navegar, onSuccess }) {
 /* ── REGISTRO ───────────────────────────────────────────── */
 function FormRegister({ onSuccess }) {
   const [campos, setCampos] = useState({
-    nombre: "",
-    apellido: "",
-    email: "",
-    telefono: "",
-    password: "",
-    confirmar: "",
+    nombre: "", apellido: "", email: "",
+    telefono: "", rut: "", password: "", confirmar: "",
   });
-  const [error, setError] = useState("");
-  const [exito, setExito] = useState(false);
+  const [error, setError]   = useState("");
+  const [exito, setExito]   = useState(false);
   const [cargando, setCargando] = useState(false);
 
   function cambiar(k, v) {
@@ -174,12 +195,25 @@ function FormRegister({ onSuccess }) {
     setError("");
   }
 
+  function cambiarRut(val) {
+    cambiar("rut", formatearRutInput(val));
+  }
+
+  function cambiarTel(val) {
+    // Solo dígitos, máximo 8
+    cambiar("telefono", val.replace(/\D/g, "").slice(0, 8));
+  }
+
   async function enviar(e) {
     e.preventDefault();
-    const { nombre, apellido, email, password, confirmar, telefono } = campos;
+    const { nombre, apellido, email, password, confirmar, telefono, rut } = campos;
 
-    if (!nombre || !apellido || !email || !password) {
+    if (!nombre || !apellido || !email || !rut || !password) {
       setError("Completa todos los campos obligatorios.");
+      return;
+    }
+    if (!validarRut(rut)) {
+      setError("El RUT ingresado no es válido.");
       return;
     }
     if (password.length < 6) {
@@ -191,14 +225,18 @@ function FormRegister({ onSuccess }) {
       return;
     }
 
+    const telefonoCompleto = telefono.length === 8 ? `+569${telefono}` : null;
+    const rutNormalizado   = normalizarRut(rut);
+
     setCargando(true);
-    const res = await register({ nombre, apellido, email, password, telefono });
+    const res = await register({
+      nombre, apellido, email, password,
+      telefono: telefonoCompleto,
+      rut: rutNormalizado,
+    });
     setCargando(false);
 
-    if (!res.ok) {
-      setError(res.error);
-      return;
-    }
+    if (!res.ok) { setError(res.error); return; }
     setExito(true);
   }
 
@@ -221,8 +259,12 @@ function FormRegister({ onSuccess }) {
     );
   }
 
+  const rutValido = campos.rut.length > 0 && validarRut(campos.rut);
+  const rutInvalido = campos.rut.length > 0 && !validarRut(campos.rut);
+
   return (
     <form onSubmit={enviar} noValidate>
+      {/* Nombre + Apellido */}
       <div className="row g-3 mb-3">
         <div className="col-6">
           <label className="form-label" htmlFor="reg-nombre">
@@ -252,6 +294,28 @@ function FormRegister({ onSuccess }) {
         </div>
       </div>
 
+      {/* RUT */}
+      <div className="mb-3">
+        <label className="form-label" htmlFor="reg-rut">
+          RUT <span className="text-danger">*</span>
+        </label>
+        <input
+          id="reg-rut"
+          type="text"
+          inputMode="numeric"
+          autoComplete="off"
+          className={"form-control" + (rutInvalido ? " is-invalid" : rutValido ? " is-valid" : "")}
+          value={campos.rut}
+          onChange={(e) => cambiarRut(e.target.value)}
+          placeholder="12.345.678-9"
+          maxLength={12}
+        />
+        {rutInvalido && (
+          <div className="invalid-feedback">RUT inválido, verifica el dígito verificador.</div>
+        )}
+      </div>
+
+      {/* Email */}
       <div className="mb-3">
         <label className="form-label" htmlFor="reg-email">
           Correo electrónico <span className="text-danger">*</span>
@@ -267,21 +331,29 @@ function FormRegister({ onSuccess }) {
         />
       </div>
 
+      {/* Teléfono con prefijo fijo */}
       <div className="mb-3">
-        <label className="form-label" htmlFor="reg-tel">
-          Teléfono
-        </label>
-        <input
-          id="reg-tel"
-          type="tel"
-          autoComplete="tel"
-          className="form-control"
-          value={campos.telefono}
-          onChange={(e) => cambiar("telefono", e.target.value)}
-          placeholder="+56 9 1234 5678"
-        />
+        <label className="form-label" htmlFor="reg-tel">Teléfono</label>
+        <div className="input-group">
+          <span className="input-group-text" style={{ background: "var(--rosa-suave)", borderColor: "var(--rosa-claro)", color: "var(--rosa)", fontWeight: 600 }}>
+            +569
+          </span>
+          <input
+            id="reg-tel"
+            type="tel"
+            inputMode="numeric"
+            autoComplete="tel"
+            className="form-control"
+            value={campos.telefono}
+            onChange={(e) => cambiarTel(e.target.value)}
+            placeholder="12345678"
+            maxLength={8}
+          />
+        </div>
+        <small className="text-muted">Ingresa los 8 dígitos de tu celular</small>
       </div>
 
+      {/* Contraseña */}
       <div className="mb-3">
         <label className="form-label" htmlFor="reg-password">
           Contraseña <span className="text-danger">*</span>
@@ -319,11 +391,7 @@ function FormRegister({ onSuccess }) {
         </div>
       )}
 
-      <button
-        type="submit"
-        className="btn btn-rosa w-100"
-        disabled={cargando}
-      >
+      <button type="submit" className="btn btn-rosa w-100" disabled={cargando}>
         {cargando ? (
           <>
             <span className="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
