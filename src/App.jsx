@@ -27,6 +27,8 @@ const SECCIONES_VALIDAS = [
   "cotizar",
   "blog",
   "faq",
+  "mi-cuenta",
+  "admin",
 ];
 
 function leerSeccionInicial() {
@@ -48,21 +50,50 @@ function App() {
 
   // Escuchar cambios de sesión Supabase
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (session?.user) {
-        setAuthUser(session.user);
-        const p = await getPerfil(session.user.id);
-        setPerfil(p);
-      }
-      setAuthCargando(false);
-    });
+    let cancelado = false;
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+    // Timeout de seguridad: si por cualquier razón la auth no resuelve
+    // en 8s, dejamos de mostrar el spinner para no bloquear al usuario.
+    const timeoutSeguridad = setTimeout(() => {
+      if (!cancelado) setAuthCargando(false);
+    }, 8000);
+
+    async function cargarSesionInicial() {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (cancelado) return;
         if (session?.user) {
           setAuthUser(session.user);
-          const p = await getPerfil(session.user.id);
-          setPerfil(p);
+          try {
+            const p = await getPerfil(session.user.id);
+            if (!cancelado) setPerfil(p);
+          } catch (err) {
+            console.error("[auth] Error cargando perfil:", err);
+          }
+        }
+      } catch (err) {
+        console.error("[auth] Error cargando sesión:", err);
+      } finally {
+        if (!cancelado) {
+          clearTimeout(timeoutSeguridad);
+          setAuthCargando(false);
+        }
+      }
+    }
+
+    cargarSesionInicial();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (_event, session) => {
+        if (cancelado) return;
+        if (session?.user) {
+          setAuthUser(session.user);
+          try {
+            const p = await getPerfil(session.user.id);
+            if (!cancelado) setPerfil(p);
+          } catch (err) {
+            console.error("[auth] Error actualizando perfil:", err);
+          }
         } else {
           setAuthUser(null);
           setPerfil(null);
@@ -70,7 +101,11 @@ function App() {
       }
     );
 
-    return () => subscription.unsubscribe();
+    return () => {
+      cancelado = true;
+      clearTimeout(timeoutSeguridad);
+      subscription.unsubscribe();
+    };
   }, []);
 
   // Persistir sección para sobrevivir refresh accidental
