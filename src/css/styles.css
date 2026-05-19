@@ -210,12 +210,14 @@
 
 html {
   scroll-behavior: smooth;
+  overflow-x: hidden;
 }
 
 body {
   font-family: "Poppins", "Segoe UI", sans-serif;
   color: var(--oscuro);
   margin: 0;
+  overflow-x: hidden;
   background: var(--fondo);
   transition: background var(--transicion), color var(--transicion);
   display: flex;
